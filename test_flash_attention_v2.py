@@ -81,7 +81,6 @@ def _attn_fwd(Q, K, V, sm_scale, M, Out,  #
         block_shape=(BLOCK_M, BLOCK_DMODEL),
         order=(1, 0),
     )
-    
     v_order: tl.constexpr = (0, 1) if V.dtype.element_ty == tl.float8e5 else (1, 0)
     V_block_ptr = tl.make_block_ptr(
         base=V + qvk_offset,
@@ -116,7 +115,7 @@ def _attn_fwd(Q, K, V, sm_scale, M, Out,  #
     acc = tl.zeros([BLOCK_M, BLOCK_DMODEL], dtype=tl.float32)
     # load scales
     qk_scale = sm_scale
-    qk_scale *= 1.44269504 # 1/log(2)
+    qk_scale *= 1.44269504  # 1/log(2)
     # load q: it will stay in SRAM throughout
     q = tl.load(Q_block_ptr)
     # stage 1: off-band
@@ -139,13 +138,11 @@ def _attn_fwd(Q, K, V, sm_scale, M, Out,  #
                                         2, offs_m, offs_n, N_CTX, V.dtype.element_ty == tl.float8e5  #
                                         )
     # epilogue
-    
     m_i += tl.math.log2(l_i)
     acc = acc / l_i[:, None]
     m_ptrs = M + off_hz * N_CTX + offs_m
     tl.store(m_ptrs, m_i)
-    tl.store(O_block_ptr, acc.to(Out.type.element_ty))    
-    
+    tl.store(O_block_ptr, acc.to(Out.type.element_ty))
 
 @triton.jit
 def _attn_bwd_preprocess(O, DO,  #

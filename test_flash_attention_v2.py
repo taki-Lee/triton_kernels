@@ -54,17 +54,17 @@ def _attn_fwd_inner(acc, l_i, m_i, q,  #
     
 
 @triton.jit
-def _attn_fwd(Q, K, V, sm_scale, M, Out,
-              stride_qz, stride_qh, stride_qm, stride_qk,
-              stride_kz, stride_kh, stride_kn, stride_kk,
-              stride_vz, stride_vh, stride_vk, stride_vn,
-              stride_oz, stride_oh, stride_om, stride_on,
-              Z, H,
-              N_CTX: tl.constexpr,
-              BLOCK_M: tl.constexpr,
-              BLOCK_DMODEL: tl.constexpr,
-              BLOCK_N: tl.constexpr,
-              STAGE: tl.constexpr,
+def _attn_fwd(Q, K, V, sm_scale, M, Out,  #
+              stride_qz, stride_qh, stride_qm, stride_qk,  #
+              stride_kz, stride_kh, stride_kn, stride_kk,  #
+              stride_vz, stride_vh, stride_vk, stride_vn,  #
+              stride_oz, stride_oh, stride_om, stride_on,  #
+              Z, H,  #
+              N_CTX: tl.constexpr,  #
+              BLOCK_M: tl.constexpr,  #
+              BLOCK_DMODEL: tl.constexpr,  #
+              BLOCK_N: tl.constexpr,  #
+              STAGE: tl.constexpr  #
               ):
     start_m = tl.program_id(0)
     off_hz = tl.program_id(1)
@@ -74,30 +74,30 @@ def _attn_fwd(Q, K, V, sm_scale, M, Out,
 
     # block pointers
     Q_block_ptr = tl.make_block_ptr(
-        base = Q + qvk_offset,
-        shape = (N_CTX, BLOCK_DMODEL),
-        strides = (stride_qm, stride_qk),
-        offsets = (start_m * BLOCK_M, 0),
-        block_shape = (BLOCK_M, BLOCK_DMODEL),
-        order=(1,0),
+        base=Q + qvk_offset,
+        shape=(N_CTX, BLOCK_DMODEL),
+        strides=(stride_qm, stride_qk),
+        offsets=(start_m * BLOCK_M, 0),
+        block_shape=(BLOCK_M, BLOCK_DMODEL),
+        order=(1, 0),
     )
     
     v_order: tl.constexpr = (0, 1) if V.dtype.element_ty == tl.float8e5 else (1, 0)
     V_block_ptr = tl.make_block_ptr(
-        base = V + qvk_offset,
-        shape = (N_CTX, BLOCK_DMODEL),
-        strides = (stride_vk, stride_vn),
-        offsets=(0,0),
+        base=V + qvk_offset,
+        shape=(N_CTX, BLOCK_DMODEL),
+        strides=(stride_vk, stride_vn),
+        offsets=(0, 0),
         block_shape=(BLOCK_N, BLOCK_DMODEL),
-        order=(0,1)
+        order=v_order,
     )
     K_block_ptr = tl.make_block_ptr(
         base=K + qvk_offset,
         shape=(BLOCK_DMODEL, N_CTX),
         strides=(stride_kk, stride_kn),
-        offsets=(0,0),
+        offsets=(0, 0),
         block_shape=(BLOCK_DMODEL, BLOCK_N),
-        order=(1,0),
+        order=(0, 1),
     )
     O_block_ptr = tl.make_block_ptr(
         base=Out + qvk_offset,
@@ -105,7 +105,7 @@ def _attn_fwd(Q, K, V, sm_scale, M, Out,
         strides=(stride_om, stride_on),
         offsets=(start_m * BLOCK_M, 0),
         block_shape=(BLOCK_M, BLOCK_DMODEL),
-        order=(1,0),
+        order=(1, 0),
     )
     # initialize offsets
     offs_m = start_m * BLOCK_M + tl.arange(0, BLOCK_M)
@@ -114,10 +114,10 @@ def _attn_fwd(Q, K, V, sm_scale, M, Out,
     m_i = tl.zeros([BLOCK_M], dtype=tl.float32) - float("inf")
     l_i = tl.zeros([BLOCK_M], dtype=tl.float32) + 1.0
     acc = tl.zeros([BLOCK_M, BLOCK_DMODEL], dtype=tl.float32)
-
+    # load scales
     qk_scale = sm_scale
     qk_scale *= 1.44269504 # 1/log(2)
-
+    # load q: it will stay in SRAM throughout
     q = tl.load(Q_block_ptr)
     # stage 1: off-band
     # For causal = True, STAGE = 3 and _attn_fwd_inner gets 1 as its STAGE
@@ -144,8 +144,7 @@ def _attn_fwd(Q, K, V, sm_scale, M, Out,
     acc = acc / l_i[:, None]
     m_ptrs = M + off_hz * N_CTX + offs_m
     tl.store(m_ptrs, m_i)
-    tl.store(O_block_ptr, acc.to(Out.type.element_ty))
-
+    tl.store(O_block_ptr, acc.to(Out.type.element_ty))    
     
 
 @triton.jit
